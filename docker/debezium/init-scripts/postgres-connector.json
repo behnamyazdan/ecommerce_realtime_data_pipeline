@@ -1,0 +1,34 @@
+{
+  "name": "ecommerce-postgreSQL",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "connector.displayName": "PostgreSQL",
+    "topic.prefix": "ecommerce_cdc",
+    "database.user": "postgres",
+    "database.dbname": "ecommerce",
+    "decimal.handling.mode": "string",
+    "database.hostname": "postgres-main",
+    "database.password": "postgres",
+    "name": "ecommerce-postgreSQL",
+    "schema.include.list": "public",
+    "connector.id": "postgres",
+    "plugin.name": "pgoutput",
+    "table.include.list": "public.*",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "snapshot.mode": "initial",
+    "tombstones.on.delete": "false",
+
+    "time.precision.mode": "connect",
+
+    "transforms": "flatten,convertTimestamp",
+    "transforms.flatten.type": "org.apache.kafka.connect.transforms.Flatten$Value",
+    "transforms.flatten.delimiter": ".",
+    "transforms.convertTimestamp.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
+    "transforms.convertTimestamp.field": "created_at, shipped_at",
+    "transforms.convertTimestamp.target.type": "Timestamp",
+    "transforms.convertTimestamp.format": "yyyy-MM-dd HH:mm:ss"
+  }
+}

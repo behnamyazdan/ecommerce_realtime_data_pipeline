@@ -1,0 +1,2 @@
+## E-Commerce Realtime Datapipeline
+In this project, I have attempted to cover a set of preliminary skills required by a data engineer. As a data analyst planning to change my field of work, this project has helped me become acquainted with various concepts, techniques, and technologies in this field. Consequently, I have decided to share my experiences.

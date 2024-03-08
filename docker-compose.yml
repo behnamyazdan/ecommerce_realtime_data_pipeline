@@ -1,0 +1,286 @@
+version: '3.3'
+
+x-common:
+  &airflow-common
+  build:
+    context: ./docker/airflow
+    dockerfile: Dockerfile
+  user: "${AIRFLOW_UID:-50000}:0"
+  env_file:
+    - .env
+  volumes:
+    - ./code/ecommerce:/usr/local/lib/python3.10/site-packages/ecommerce
+    - ./pipeline/dags:/opt/airflow/dags
+    - ./data/airflow/logs:/opt/airflow/logs
+    - ./data/airflow/config:/opt/airflow/config
+    - ./data/airflow/plugins:/opt/airflow/plugins
+    - ./data/airflow/data:/data
+  networks:
+    - services
+
+services:
+  airflow-postgres:
+    image: postgres:16-alpine
+    container_name: postgres_airflow
+    hostname: postgres_airflow
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+    networks:
+      - services
+    environment:
+      - POSTGRES_USER=${POSTGRES_AIRFLOW_USER:-airflow}
+      - POSTGRES_PASSWORD=${POSTGRES_AIRFLOW_PASSWORD:-airflow}
+      - POSTGRES_DB=${POSTGRES_AIRFLOW_DB:-airflow}
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    command: scheduler
+    restart: on-failure
+    ports:
+      - "13006:8793"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    restart: always
+    command: webserver
+    ports:
+      - "13005:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    entrypoint: /bin/bash
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      grafana:
+        condition: service_started
+    command:
+      - -c
+      - |
+        mkdir -p /sources/logs /sources/dags /sources/plugins
+        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}
+        exec /entrypoint airflow version
+  postgres-main:
+    image: postgres:16-alpine
+    container_name: "postgres-main"
+    hostname: "postgres-main"
+    ports:
+      - "65432:5432"
+    env_file:
+      - .env
+    volumes:
+      - postgres-main-volume:/var/lib/postgresql/data
+#      - ./data/postgres_main/logs:/var/log/postgresql
+      - ./database/postgres_tables.sql:/docker-entrypoint-initdb.d/postgres_tables.sql
+    command: ['postgres', '-c', 'wal_level=logical']
+    healthcheck:
+      test: ['CMD', 'psql', '-U', 'postgres', '-c', 'SELECT 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - services
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_SERVER_ID: 1
+      ZOOKEEPER_SERVERS: zookeeper:2888:3888
+    healthcheck:
+      test: echo srvr | nc zookeeper 2181 || exit 1
+      start_period: 10s
+      retries: 20
+      interval: 10s
+    networks:
+      - services
+
+
+  kafka-broker:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka-broker
+    container_name: kafka-broker
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+      - "9999:9999"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-broker:19092,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9092,DOCKER://host.docker.internal:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_BROKER_ID: 1
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_JMX_PORT: 9999
+      KAFKA_JMX_HOSTNAME: ${DOCKER_HOST_IP:-127.0.0.1}
+      KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+    healthcheck:
+      test: nc -z localhost 9092 || exit -1
+      start_period: 15s
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    depends_on:
+      - zookeeper
+    networks:
+      - services
+    volumes:
+      - kafka-volume:/var/lib/kafka/data
+
+  kafka-ui:
+    container_name: kafka-ui
+    image: provectuslabs/kafka-ui:latest
+    depends_on:
+      kafka-broker:
+        condition: service_healthy
+    networks:
+      - services
+    ports:
+      - "8095:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-broker:19092
+
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    container_name: clickhouse
+    hostname: clickhouse
+    environment:
+      CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS: 1
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse-volume:/var/lib/clickhouse
+#      - ./docker/clickhouse/config/clickhouse_config.xml:/etc/clickhouse-server/config.xml
+#      - ./docker/clickhouse/config/users.xml:/etc/clickhouse-server/users.xml
+      - ./database/clickhouse_tables.sql:/docker-entrypoint-initdb.d/clickhouse_tables.sql
+    depends_on:
+      kafka-broker:
+        condition: service_healthy
+      zookeeper:
+        condition: service_healthy
+      debezium:
+        condition: service_healthy
+
+    networks:
+      - services
+
+  debezium:
+    image: debezium/connect:latest
+    container_name: debezium
+    hostname: debezium
+    depends_on:
+      postgres-main:
+        condition: service_healthy
+      kafka-broker:
+        condition: service_healthy
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - '8083:8083'
+    environment:
+      BOOTSTRAP_SERVERS: kafka-broker:19092
+      CONNECT_REST_ADVERTISED_HOST_NAME: debezium
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: connect_configs
+      STATUS_STORAGE_TOPIC: connect_statuses
+      OFFSET_STORAGE_TOPIC: connect_offsets
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      ENABLE_DEBEZIUM_SCRIPTING: 'true'
+    healthcheck:
+      test:
+        [ 'CMD', 'curl', '--silent', '--fail', '-X', 'GET', 'http://debezium:8083/connectors' ]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - services
+
+  debezium-ui:
+    image: debezium/debezium-ui:latest
+    container_name: debezium-ui
+    hostname: debezium-ui
+    depends_on:
+      debezium:
+        condition: service_healthy
+    ports:
+      - '8085:8080'
+    environment:
+      KAFKA_CONNECT_URIS: http://debezium:8083
+    networks:
+      - services
+
+  debezium-connector-init:
+    image: busybox
+    container_name: debezium-connector-init
+    depends_on:
+      debezium:
+        condition: service_healthy
+    volumes:
+      - ./docker/debezium/init-scripts/init.sh:/init-scripts/init.sh
+      - ./docker/debezium/init-scripts/postgres-connector.json:/init-scripts/postgres-connector.json
+    command: sh -c '/init-scripts/init.sh'
+    networks:
+      - services
+
+  grafana:
+    container_name: grafana
+    hostname: grafana
+    image: grafana/grafana
+    ports:
+      - '13000:3000'
+    environment:
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_ALLOW_ORG_CREATE=false
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Read Only Editor
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel,marcusolsson-gantt-panel,grafana-worldmap-panel,briangann-gauge-panel,natel-plotly-panel,grafana-clickhouse-datasource
+    depends_on:
+      - clickhouse
+    volumes:
+      # - ./data/grafana/logs:/var/log/grafana
+      # - ./data/grafana/provisioning:/etc/grafana/provisioning
+      # - ./data/grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./dashboard/grafana/provisioning:/etc/grafana/provisioning
+      - ./data/grafana/plugins:/var/lib/grafana/plugins
+      - ./data/grafana/data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - services
+
+volumes:
+  kafka-volume:
+  clickhouse-volume:
+  grafana-volume:
+  postgres-main-volume:
+
+networks:
+  services:
+    name: service_network
