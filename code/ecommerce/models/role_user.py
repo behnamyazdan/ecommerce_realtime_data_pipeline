@@ -50,7 +50,7 @@ class RoleUser:
                     role_data.append((admin_role_id, user_id))
                 elif manager_role_count < 2:
                     role_data.append((manager_role_id, user_id))
-                elif staff_role_count < 5:
+                elif staff_role_count < 4:
                     role_data.append((staff_role_id, user_id))
                 else:
                     role_data.append((customer_role_id, user_id))
