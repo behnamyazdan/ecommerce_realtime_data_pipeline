@@ -1,5 +1,10 @@
-# E-Commerce Realtime Datapipeline
+# E-Commerce Realtime Data Pipeline
 In this project, I aimed to cover a set of preliminary skills required by a data engineer. As a data analyst planning to transition into this field, this project has helped me become acquainted with various concepts, techniques, and technologies. As a result, I have decided to share my experiences.
+
+---
+
+* [Project Overview and Architecture](https://github.com/behnamyazdan/ecommerce_realtime_data_pipeline?tab=readme-ov-file#project-overview-and-architecture)
+* [Getting Started: Running the Project](https://github.com/behnamyazdan/ecommerce_realtime_data_pipeline?tab=readme-ov-file#getting-started-running-the-project)
 
 ---
 ## Project Overview and Architecture
@@ -9,6 +14,7 @@ This project encompasses the design and implementation of a data pipeline tailor
 <img src="_resources/project_architecture.png" alt="e-commerce real time data pipeline" style="max-width: 850px; height: auto;" />
 </div>
 
+\
 **1- Python:**
 
 In this project, [Python](https://www.python.org/) served as the primary programming language. Python is widely used in data engineering projects due to its versatility, extensive libraries, and ease of use. To simulate ecommerce data and populate the database, I utilized the Faker library. Faker is a Python library that generates fake data, such as names, addresses, and product information, which is useful for testing and development purposes. Additionally, I employed the `geopy.geocoders` module, specifically the `Nominatim` class, to generate coordinates for each city where user orders were registered. This allowed for the geocoding of location data, enabling geographic analysis and visualization within the project. You can access the code I used to generate fake data in "[code/ecommerce/models](https://github.com/behnamyazdan/ecommerce_realtime_data_pipeline/tree/main/code/ecommerce/models)".
@@ -71,18 +77,21 @@ I utilized [docker-compose](https://docs.docker.com/compose/) to streamline the 
 #### Step 1: Clone the Repository
 1. Open your terminal.
 2. Clone the project repository from GitHub to your local machine using the following command:
+
    ```
    git clone https://github.com/behnamyazdan/ecommerce_realtime_data_pipeline.git
    ```
 
 #### Step 2: Navigate to Project Directory
 1. Use the command line to navigate to the root directory of the project:
+
    ```
    cd ecommerce_realtime_data_pipeline
    ```
 
 #### Step 3: Start Docker Containers
 1. Execute the following command to start all services defined in the docker-compose file:
+   
    ```
    docker-compose up
    ```
@@ -104,7 +113,4 @@ These adjustments reflect the specific tasks performed by the `airflow-init` and
    - **Grafana Dashboard:** `http://localhost:13000` username:`admin`, password:`admin`
    - **PostgreSQL:** port:`65432`, username:`postgres`, password:`postgres`
    - **ClickHouse:** port:`8123`, username:`default`, password: _(not required)_
-
-
-
 
